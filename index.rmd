@@ -1,0 +1,357 @@
+---
+title: "Data Analysis for The Office"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    social: menu
+    source_code: embed
+    vertical_layout: fill
+    logo: img/logo.JPG
+---
+<style>                     
+.metricsgraphics-legend {
+  margin-top:-20px;
+  font-size:10pt;
+  text-align:center;
+}
+
+.navbar {
+  background-color:black;
+  border-color:white;
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+}
+
+.navbar-brand {
+color:white!important;
+}
+
+.sidebar { font-size: 13px; }
+</style> 
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(metricsgraphics)
+library(flexdashboard)
+library(schrute)
+library(plotly) 
+library(rtweet)
+library(stringr)
+library(tidytext)
+library(dplyr)
+library(ggplot2)
+library(maps)
+library(raster)
+library(rgdal)
+library(classInt)
+library(RColorBrewer)
+library(crosstalk)
+library(tidyr)
+library(wordcloud2)
+library(wordcloud)
+library(stringr)
+library(varhandle)
+library(igraph)
+library(networkD3)
+```
+Column {.sidebar data-width=190}
+-----------------------------------------------------------------------
+**About**: 
+
+This dashboard includes visualization and analysis of the **most popular TV show in 2018 (as shown in the map), the Office. **
+
+Users can hover on the **time series plot** to find the best episodes in each season. Season 3 has the **highest** and season 8 has the **lowest** average ratings. 
+
+Users can also check the **word clouds** for 4 main characters (Michael, Dwight, Jim and Pam, aka “MDJP”)  and 2 other characters, Andy and Creed, as they are my personal favorites (LOL). 
+
+Don’t forget to check out other tabs, the **network** of character relationships (with MDJP and their top 10 friends in the office), and a **lollipop plot** which shows the number of mentions for MDJP from 2000 random ‘the office-related’ posts on twitter.
+
+**Author**: Beixuan Jia (bj256)
+
+**Software**: R
+
+**Data source**: 
+
+* [fave TV shows by each state](https://www.insider.com/most-binged-tv-show-by-state-2018-8#arkansas-roseanne-4)
+* [script](https://docs.google.com/spreadsheets/d/18wS5AAwOh8QO95RwHLS95POmSNKA2jjzdt0phrxeAE0/edit#gid=747974534)
+* [IMDb Rating for each Episode](https://www.kaggle.com/kapastor/the-office-imdb-ratings-per-episode)
+
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+### Map: Most-binged TV show in every state in 2018
+```{r}
+## Read in data
+us_states <- map_data("state")
+show <- read.csv("data/show.csv")
+show_freq <- data.frame(table(show$pop_show))
+## Change variable names
+names(show_freq)[names(show_freq)=='Var1'] <- 'Show'
+## Find the most popular show in 2018
+show_freq = show_freq %>% mutate(rank = dense_rank(desc(Freq)))
+show_freq = show_freq[(order(show_freq$rank)),]
+
+## Prepare the dataset for map
+## Join show and the freqency table
+show <- left_join(show, show_freq, by=c('pop_show'='Show'))
+## Find the most popular show
+show = show[(order(show$rank)),]
+## Change variable name
+names(show)[names(show)=='ï..state'] <- 'state'
+## Covert the state names to lower cases
+show$region <- tolower(show$state)
+
+## Join show data and map data
+show_map <- left_join(show, us_states, by=c('region'='region'))
+# show_map$subregion <- NULL
+show_map$state <- NULL
+## reorder legend
+show_map$label <- factor(show_map$label, levels = c("The Office", "13 Reasons Why", "Grey's Anatomy", "Supernatural", "Friends", "other"))
+```
+
+```{r, fig.height=8, fig.width=12}
+## custom colors for the map
+mycolors = c(brewer.pal(name="Set3", n = 4), brewer.pal(name="Set1", n = 2))
+
+## create grid
+p0 <- ggplot(data = show_map,
+            aes(x = long, y = lat, group = group, fill = label)) + theme_bw()
+
+p1 = p0 + geom_polygon(color = "#453d35", size = 0.1) +
+    coord_map(projection = "albers", lat0 = 39, lat1 = 45)
+
+## create map
+p2 <- p1 +
+  labs(title = "The most-binged TV show in every state in 2018", fill = NULL) + scale_fill_manual(values=c("#377EB8", "#8DD3C7", "#BEBADA", "#e78b8b", "#f0b873", "#f9f9d8")) + theme(plot.title = element_text(hjust = 0.5), text = element_text(size = 20))
+
+p2
+```
+
+
+### Time Series: IMDb Rating of Each Episode
+```{r}
+## Read in data
+rate <- read.csv("data/rating.csv")
+rate <- rate[, -which(names(rate) %in% c('Description','Num_Votes'))]
+
+## Re-create episode variable
+eps <- c(1:26)
+eps <- as.factor(eps)
+```
+
+```{r}
+## Filter the rating variable by seasons
+rate1 <- subset(rate, Season == 1)$Rating
+rate2 <- subset(rate, Season == 2)$Rating
+rate3 <- subset(rate, Season == 3)$Rating
+rate4 <- subset(rate, Season == 4)$Rating
+rate5 <- subset(rate, Season == 5)$Rating
+rate6 <- subset(rate, Season == 6)$Rating
+rate7 <- subset(rate, Season == 7)$Rating
+rate8 <- subset(rate, Season == 8)$Rating
+rate9 <- subset(rate, Season == 9)$Rating
+```
+
+```{r}
+## Create a new dataframe with episode numbers and seasons
+lines <- data.frame(eps, rate1, rate2, rate3, rate4, rate5, rate6, rate7, rate8, rate9)
+```
+
+```{r}
+## Create the time series plot: add rating data from 9 seasons
+
+fig <- plot_ly(lines, x = ~eps, y = ~rate1, name = 'Season 1', type = 'scatter', mode = 'lines', width = 1.5, hoverinfo = "Season", line = list(color = 'rgba(192,192,192,0.4)')) 
+fig <- fig %>% add_trace(y = ~rate2, name = 'Season 2', line = list(color = 'rgba(192,192,192,0.4)'))
+fig <- fig %>% add_trace(y = ~rate3, name = 'Season 3', line = list(color = 'rgb(205, 12, 24)'))
+fig <- fig %>% add_trace(y = ~rate4, name = 'Season 4', line = list(color = 'rgba(192,192,192,0.4)'))
+fig <- fig %>% add_trace(y = ~rate5, name = 'Season 5', line = list(color = 'rgba(192,192,192,0.4)'))
+fig <- fig %>% add_trace(y = ~rate6, name = 'Season 6', line = list(color = 'rgba(192,192,192,0.4)'))
+fig <- fig %>% add_trace(y = ~rate7, name = 'Season 7', line = list(color = 'rgba(192,192,192,0.4)'))
+fig <- fig %>% add_trace(y = ~rate8, name = 'Season 8', line = list(color = 'rgb(22, 96, 167)'))
+fig <- fig %>% add_trace(y = ~rate9, name = 'Season 9', line = list(color = 'rgba(192,192,192,0.4)'))
+fig <- fig %>% layout(title = "IMDb Rating of Each Episode",
+         xaxis = list(title = "Episode"),
+         yaxis = list (title = "IMDb Rating"))
+
+fig
+```
+
+Column {.tabset data-width=350}
+-----------------------------------------------------------------------
+### Wordcloud
+
+```{r}
+## Read in data
+df <- schrute::theoffice
+## Create a dataset with characters and their scripts only
+script <- df[,c('character','text')]
+```
+
+```{r}
+## Token Script
+token.script <- script %>% 
+# dplyr::filter(character == "Pam") %>% 
+tidytext::unnest_tokens(word, text)
+
+## Define stop words and remove them from the script
+stop_words <- tidytext::stop_words
+tidy.token.script <- token.script %>% dplyr::anti_join(stop_words, by = "word")
+
+## Count frequency for each unique word from the script
+word_freq = tidy.token.script %>% 
+  group_by(character) %>% 
+  dplyr::count(word, sort = TRUE) 
+word_freq = data.frame(word_freq)
+
+## Add more stepwords and remove them from the word frequency table
+word_list = c("uh", "ah", "um", "huh", "yeah", "hey", "gonna")
+word_freq <- word_freq[! word_freq$word %in% word_list, ]
+
+## Rename variable
+names(word_freq)[names(word_freq)=='n'] <- 'freq'
+
+## Define the main characters. Only keep words that the main characters used
+main_char = c("Michael", "Dwight", "Jim", "Pam", "Andy", "Angela", "Kevin", "Erin", "Oscar", "Creed")
+word_freq <- word_freq[word_freq$character %in% main_char, ]
+```
+
+```{r}
+## Create subplots 
+par(mfrow=c(2,3))
+
+## Function: return a wordcloud for each main character
+top_wc <- function(x) {
+  par(mar = rep(0,4))
+  data = subset(word_freq, character == x)
+  wordcloud(words = data$word, freq = data$freq, min.freq = 5,
+          # scale=c(1,0.25),
+          scale=c(2,0.5),          
+          max.words=100, random.order=FALSE, rot.per=0.35,
+          colors=brewer.pal(8, "Dark2"), main = "hi") 
+  mtext(paste0("Word cloud for ", x), side = 3, cex = 0.8, line = -1)
+}
+
+top_wc("Michael")
+top_wc("Dwight")
+top_wc("Jim")
+top_wc("Pam")
+top_wc("Andy")
+top_wc("Creed")
+```
+
+### Network
+```{r}
+## Read in data, rename variables
+library(stringr)
+nw <- read.csv("data/network.csv")
+names(nw)[names(nw)=='ï..source'] <- 'source'
+nw$target = str_to_title(nw$target)
+
+## Define Edges
+edge = nw
+library(varhandle)
+edge$source <- unfactor(edge$source)
+
+## Define Nodes
+node1 <- unique(edge$target)
+node2 <- unique(edge$source)
+node <- c(node1, node2)
+node <- unique(node)
+node = as.data.frame(node) 
+
+## Create groups: 1 - main characters; 2 - others
+names(node)[names(node)=='node'] <- 'name'
+node$group <- ifelse(node$name == 'Dwight' | node$name == 'Michael' | node$name == 'Jim' | node$name == 'Pam', 1, 2)
+```
+
+```{r}
+library(igraph)
+library(networkD3)
+
+## Read in cleaned data for note and edges
+MisLinks = read.csv("data/nw2.csv")
+MisNodes = read.csv("data/node.csv")
+
+## Change datatype 
+MisNodes$group <- as.integer(MisNodes$group)
+## Rename variable
+names(MisLinks)[names(MisLinks)=='ï..source'] <- 'source'
+## Adjust edge width
+MisLinks$value_adj = MisLinks$value/25
+```
+
+```{r}
+## Custom colors for the network nodes
+ColourScale <- 'd3.scaleOrdinal()
+            .domain(["main", "other"])
+           .range(["#8961ab", "#a3e6f4"]);'
+
+## Create network
+fn <- forceNetwork(Links = MisLinks, Nodes = MisNodes, Source = "source",
+             Target = "target", Value = "value_adj", NodeID = "name",
+             Group = "group", opacity = 0.9, Nodesize = 3, 
+             linkDistance = 100, fontSize = 20,
+             colourScale = JS(ColourScale))
+
+## Add title
+fn <- htmlwidgets::prependContent(fn, htmltools::tags$h3("Network for selected characters from the Office"))
+
+## Adjust title format and background color
+fn <- htmlwidgets::onRender(
+  fn,
+  'function(el, x) { 
+    d3.selectAll(".legend text").style("fill", "white");
+    d3.select("body").style("background-color", "#fffeee");
+    d3.select("h3").style("justify-content", "center").style("text-align", "center");
+  }'
+)
+
+fn
+```
+
+### Popularity on Tweeter 
+```{r}
+## Read in random 2000 tweets with #TheOffice
+num_tweets <- 2000
+TheOffice <- search_tweets('#TheOffice', n = num_tweets, include_rts = FALSE)
+
+## Tokenize tweets and remove stop words
+reg <- "([^A-Za-z\\d#@']|'(?![A-Za-z\\d#@]))"
+TheOffice_words <- TheOffice %>% dplyr::select (status_id, text) %>%
+  filter(!str_detect(text, '^"')) %>%
+  mutate(text = str_replace_all(text, "https://t.co/[A-Za-z\\d]+|&amp;", "")) %>%
+  unnest_tokens(word, text, token = "regex", pattern = reg) %>%
+  filter(!word %in% stop_words$word,
+         str_detect(word, "[a-z]"))
+
+## Find the top 30 words
+# TheOffice_words %>% group_by(word) %>% summarize(n = n()) %>% arrange(desc(n)) %>% top_n(30)
+
+## Find the 5 most commonly used words for main characters
+# TheOffice_Characters <- TheOffice_words %>% filter(word =='#michaelscott'| word=='michael' | word=='dwight' | word== 'jim' | word== 'pam')
+# TheOffice_Characters %>% group_by(word) %>% summarize(n = n()) %>% arrange(desc(n)) %>% top_n(5)
+```
+
+```{r}
+## Create a data with times of mentioning in tweets for each main character
+Characters_Count <- data.frame("Name"=c("Michael", "Dwight", "Jim", "Pam"), "Mentions"= c(202,84,78,60), stringsAsFactors = FALSE)
+```
+
+```{r}
+library(ggplot2)
+
+## Create lolipop plot to show the number of mentioning on tweets by each main character
+ggplot(Characters_Count, aes(x=Name, y=Mentions), label = Mentions) +
+  geom_segment( aes(x=Name, xend=Name, y=0, yend=Mentions), color="skyblue") +
+  geom_point( color="blue", size=7, alpha=0.6) +
+  geom_text(label = Characters_Count$Mentions, color = "white", size = 3.5) +
+  ggtitle("Popularity of characters from \n2000 random 'the Office-related' tweets") + xlab("Character Names") + ylab("Number of Mentions") +
+  theme_light() +
+  coord_flip() +
+  theme(
+    panel.grid.major.y = element_blank(),
+    panel.border = element_blank(),
+    axis.ticks.y = element_blank(),
+    plot.title = element_text(hjust = 0.5)
+  )
+```
